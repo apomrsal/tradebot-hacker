@@ -141,16 +141,130 @@ def get_results(device_id):
         print(f"❌ Get results error: {e}")
         return jsonify({'result': None}), 200
 
-# ===== عرض قائمة الأجهزة =====
+# ===== ✅ عرض قائمة الأجهزة (معدل) =====
 @app.route('/devices', methods=['GET'])
 def get_devices():
     try:
+        # ✅ إرجاع قائمة الأجهزة المسجلة
         return jsonify({'devices': devices}), 200
+    except Exception as e:
+        print(f"❌ Get devices error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+# ===== ✅ عرض حالة جهاز معين =====
+@app.route('/device_status/<device_id>', methods=['GET'])
+def device_status(device_id):
+    try:
+        if device_id in devices:
+            return jsonify({
+                'device_id': device_id,
+                'device_name': devices[device_id],
+                'last_seen': device_last_seen.get(device_id),
+                'commands_pending': len(pending_commands.get(device_id, [])),
+                'results_pending': len(pending_results.get(device_id, []))
+            }), 200
+        return jsonify({'error': 'Device not found'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# ===== ✅ حذف جهاز =====
+@app.route('/remove_device/<device_id>', methods=['DELETE'])
+def remove_device(device_id):
+    try:
+        if device_id in devices:
+            del devices[device_id]
+            if device_id in pending_commands:
+                del pending_commands[device_id]
+            if device_id in pending_results:
+                del pending_results[device_id]
+            if device_id in device_last_seen:
+                del device_last_seen[device_id]
+            print(f"🗑️ Device removed: {device_id}")
+            return jsonify({'status': 'removed'}), 200
+        return jsonify({'error': 'Device not found'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# ===== ✅ تنظيف الأجهزة غير النشطة =====
+@app.route('/cleanup', methods=['POST'])
+def cleanup():
+    try:
+        now = time.time()
+        removed = []
+        for device_id in list(devices.keys()):
+            last_seen = device_last_seen.get(device_id, 0)
+            if now - last_seen > 300:  # 5 دقائق
+                removed.append(device_id)
+                del devices[device_id]
+                if device_id in pending_commands:
+                    del pending_commands[device_id]
+                if device_id in pending_results:
+                    del pending_results[device_id]
+                if device_id in device_last_seen:
+                    del device_last_seen[device_id]
+        return jsonify({'status': 'cleanup_done', 'removed': removed}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# ===== ✅ تسجيل جهاز عبر GET (للتجربة السريعة) =====
+@app.route('/register_manual/<device_id>/<device_name>', methods=['GET'])
+def register_manual(device_id, device_name):
+    try:
+        if not device_id:
+            return jsonify({'error': 'Missing device_id'}), 400
+            
+        devices[device_id] = device_name
+        device_last_seen[device_id] = time.time()
+        
+        if device_id not in pending_commands:
+            pending_commands[device_id] = []
+        if device_id not in pending_results:
+            pending_results[device_id] = []
+            
+        print(f"📱 Device registered manually: {device_id} ({device_name})")
+        print(f"📊 Total devices: {len(devices)}")
+        
+        return jsonify({'status': 'registered', 'device_id': device_id, 'device_name': device_name}), 200
+    except Exception as e:
+        print(f"❌ Register error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+# ===== ✅ عرض جميع المسارات المتاحة (للاختبار) =====
+@app.route('/routes', methods=['GET'])
+def list_routes():
+    try:
+        routes = []
+        for rule in app.url_map.iter_rules():
+            routes.append({
+                'endpoint': rule.endpoint,
+                'methods': list(rule.methods),
+                'path': str(rule)
+            })
+        return jsonify({'routes': routes}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
-    print(f"🚀 Server starting on port {port}")
-    print(f"📱 Waiting for devices to register...")
+    print("=" * 50)
+    print("🚀 TradeBot Server Starting...")
+    print("=" * 50)
+    print(f"📱 Server will run on port: {port}")
+    print("📋 Available endpoints:")
+    print("  / - Home")
+    print("  /health - Health check")
+    print("  /register - Register device (POST)")
+    print("  /register_manual/<id>/<name> - Register device (GET)")
+    print("  /send_command - Send command (POST)")
+    print("  /get_commands/<id> - Get commands (GET)")
+    print("  /send_result - Send result (POST)")
+    print("  /get_results/<id> - Get results (GET)")
+    print("  /devices - List all devices (GET)")
+    print("  /device_status/<id> - Device status (GET)")
+    print("  /remove_device/<id> - Remove device (DELETE)")
+    print("  /cleanup - Cleanup inactive devices (POST)")
+    print("  /routes - List all routes (GET)")
+    print("=" * 50)
+    print("📱 Waiting for devices to register...")
+    print("=" * 50)
     app.run(host='0.0.0.0', port=port)
